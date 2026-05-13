@@ -1,0 +1,418 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && (
+          request.auth.uid == "ydMkRWEK6VdDVQpyMXNkolkAaoC3"
+          || request.auth.token.email == "motoboysblumenau@gmail.com"
+        );
+    }
+
+    function isCommercialUser() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/commercialUsers/$(request.auth.uid));
+    }
+
+    function isApprovedStoreOwner(storeId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/stores/$(storeId))
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.ownerUid == request.auth.uid
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.status == "aprovado";
+    }
+
+    function isOwnStore(storeId) {
+      return request.auth != null
+        && storeId == request.auth.uid
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    function isAssignedMotoboy() {
+      return request.auth != null
+        && resource.data.assignedMotoboyUid == request.auth.uid;
+    }
+
+    function isOwnMotoboyProfile(motoboyId) {
+      return request.auth != null
+        && resource.data.authUid == request.auth.uid;
+    }
+
+    function loginOwnsMotoboy() {
+      return request.auth != null
+        && (
+          (
+            "loginCpf" in resource.data
+            && exists(/databases/$(database)/documents/motoboyLogins/$(resource.data.loginCpf))
+            && get(/databases/$(database)/documents/motoboyLogins/$(resource.data.loginCpf)).data.authUid == request.auth.uid
+          )
+          || (
+            "documentDigits" in resource.data
+            && exists(/databases/$(database)/documents/motoboyLogins/$(resource.data.documentDigits))
+            && get(/databases/$(database)/documents/motoboyLogins/$(resource.data.documentDigits)).data.authUid == request.auth.uid
+          )
+        );
+    }
+
+    function motoboyOwnsRecord(motoboyId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/motoboys/$(motoboyId))
+        && get(/databases/$(database)/documents/motoboys/$(motoboyId)).data.authUid == request.auth.uid;
+    }
+
+    function motoboyCanAccept(motoboyId) {
+      return motoboyOwnsRecord(motoboyId)
+        && (
+          !("technicalPauseUntilMs" in get(/databases/$(database)/documents/motoboys/$(motoboyId)).data)
+          || get(/databases/$(database)/documents/motoboys/$(motoboyId)).data.technicalPauseUntilMs <= request.time.toMillis()
+        );
+    }
+
+    match /commercialUsers/{uid} {
+      allow get: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow list: if isAdmin();
+
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == "store"
+        && request.resource.data.status == "pendente"
+        && request.resource.data.createdAt is string;
+
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "name",
+            "phone",
+            "updatedAt"
+          ])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /stores/{storeId} {
+      allow get: if isAdmin() || isOwnStore(storeId);
+      allow list: if isAdmin();
+
+      allow create: if request.auth != null
+        && storeId == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == "pendente"
+        && request.resource.data.storeName is string
+        && request.resource.data.responsibleName is string
+        && request.resource.data.phone is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.address is map
+        && request.resource.data.address.street is string
+        && request.resource.data.address.number is string
+        && request.resource.data.address.neighborhood is string
+        && request.resource.data.address.city is string
+        && request.resource.data.address.state is string
+        && request.resource.data.location is map
+        && request.resource.data.location.lat is number
+        && request.resource.data.location.lng is number
+        && request.resource.data.createdAt is string;
+
+      allow update: if isAdmin()
+        || (
+          isOwnStore(storeId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "storeName",
+            "responsibleName",
+            "phone",
+            "document",
+            "hasCnpj",
+            "legalCpf",
+            "productType",
+            "customProductType",
+            "address",
+            "location",
+            "updatedAt"
+          ])
+          && request.resource.data.status == resource.data.status
+          && resource.data.status in ["pendente", "reprovado"]
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /deliveries/{deliveryId} {
+      allow get: if isAdmin()
+        || isAssignedMotoboy()
+        || motoboyOwnsRecord(resource.data.assignedMotoboyId)
+        || resource.data.protocol == deliveryId
+        || (
+          request.auth != null
+          && "createdByUid" in resource.data
+          && resource.data.createdByUid == request.auth.uid
+        )
+        || (
+          request.auth != null
+          && "storeId" in resource.data
+          && resource.data.storeId == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          request.auth != null
+          && !isCommercialUser()
+        )
+        || (
+          request.auth != null
+          && "createdByUid" in resource.data
+          && resource.data.createdByUid == request.auth.uid
+        )
+        || (
+          request.auth != null
+          && "storeId" in resource.data
+          && resource.data.storeId == request.auth.uid
+        );
+
+      allow create: if (
+          request.resource.data.protocol == deliveryId
+          && request.resource.data.status == "Novo"
+          && request.resource.data.customerName is string
+          && request.resource.data.phone is string
+          && request.resource.data.pickupAddress is string
+          && request.resource.data.deliveryAddress is string
+          && request.resource.data.createdAt is string
+        )
+        || (
+          request.auth != null
+          && request.resource.data.protocol == deliveryId
+          && request.resource.data.status == "Novo"
+          && request.resource.data.customerName is string
+          && request.resource.data.phone is string
+          && request.resource.data.pickupAddress is string
+          && request.resource.data.deliveryAddress is string
+          && request.resource.data.createdAt is string
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.storeId is string
+          && isApprovedStoreOwner(request.resource.data.storeId)
+        );
+
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.status == "Novo"
+          && (!("assignedMotoboyId" in resource.data) || resource.data.assignedMotoboyId == "")
+          && motoboyCanAccept(request.resource.data.assignedMotoboyId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "assignedMotoboyId",
+            "assignedMotoboyUid",
+            "assignedMotoboyName",
+            "assignedMotoboyPhone",
+            "assignedMotoboyLocation",
+            "assignedAt",
+            "motoboyLocation",
+            "motoboyLocationUpdatedAt",
+            "status",
+            "updatedAt"
+          ])
+          && request.resource.data.status == "Motoboy solicitado"
+        )
+        || (
+          isAssignedMotoboy()
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "status",
+            "startedAt",
+            "pickupArrivedAt",
+            "pickedUpAt",
+            "deliveryArrivedAt",
+            "finishedAt",
+            "cancelNoticeSeenAt",
+            "canceledAt",
+            "motoboyLocation",
+            "motoboyLocationUpdatedAt",
+            "updatedAt"
+          ])
+          && request.resource.data.status in ["Motoboy solicitado", "Em andamento", "Finalizado", "Cancelado"]
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /motoboyLogins/{cpf} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /fixedMotoboyOffers/{offerId} {
+      allow get, list: if isAdmin() || request.auth != null;
+
+      allow create: if request.auth != null
+        && request.resource.data.storeUid == request.auth.uid
+        && request.resource.data.status == "aberta"
+        && request.resource.data.storeName is string
+        && request.resource.data.contactPhone is string
+        && request.resource.data.startTime is string
+        && request.resource.data.endTime is string
+        && request.resource.data.paymentMode in ["fixo", "por_entrega"]
+        && isApprovedStoreOwner(request.resource.data.storeUid);
+
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.storeUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status",
+            "closedAt",
+            "botGroupMessageKey",
+            "botNotifiedAt",
+            "updatedAt"
+          ])
+          && request.resource.data.status in ["preenchida", "cancelada"]
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /supportTickets/{ticketId} {
+      allow get, list: if isAdmin()
+        || request.auth != null;
+
+      allow create: if (
+          request.auth != null
+          && request.resource.data.motoboyUid == request.auth.uid
+          && request.resource.data.status == "aberto"
+          && request.resource.data.motoboyId is string
+          && request.resource.data.message is string
+          && request.resource.data.createdAt is string
+        )
+        || (
+          request.auth != null
+          && request.resource.data.type == "store"
+          && request.resource.data.storeUid == request.auth.uid
+          && request.resource.data.status == "aberto"
+          && request.resource.data.storeName is string
+          && request.resource.data.message is string
+          && request.resource.data.createdAt is string
+        );
+
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.motoboyUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status",
+            "closedAt",
+            "lastMessage",
+            "lastMessageAt",
+            "lastMessageId",
+            "lastSender",
+            "updatedAt"
+          ])
+          && (
+            request.resource.data.status == "encerrado"
+            || request.resource.data.status == resource.data.status
+          )
+        )
+        || (
+          request.auth != null
+          && resource.data.storeUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status",
+            "lastMessage",
+            "lastMessageAt",
+            "lastMessageId",
+            "lastSender",
+            "updatedAt"
+          ])
+          && request.resource.data.status in ["aberto", resource.data.status]
+        );
+
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow get, list: if isAdmin()
+          || (
+            request.auth != null
+            && get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.motoboyUid == request.auth.uid
+          )
+          || (
+            request.auth != null
+            && get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.storeUid == request.auth.uid
+          );
+
+        allow create: if isAdmin()
+          || (
+            request.auth != null
+            && get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.motoboyUid == request.auth.uid
+            && request.resource.data.sender == "motoboy"
+            && request.resource.data.text is string
+            && request.resource.data.createdAt is string
+          )
+          || (
+            request.auth != null
+            && get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.storeUid == request.auth.uid
+            && request.resource.data.sender == "store"
+            && request.resource.data.text is string
+            && request.resource.data.createdAt is string
+          );
+
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /motoboys/{motoboyId} {
+      allow get: if isAdmin()
+        || isOwnMotoboyProfile(motoboyId)
+        || loginOwnsMotoboy()
+        || (
+          request.auth == null
+          && !exists(/databases/$(database)/documents/motoboys/$(motoboyId))
+        )
+        || (
+          request.auth == null
+          && resource.data.documentDigits == motoboyId
+          && resource.data.status in ["pendente", "reprovado"]
+        );
+
+      allow list: if isAdmin();
+
+      allow create: if isAdmin()
+        || (
+          request.auth == null
+          && request.resource.data.status == "pendente"
+          && request.resource.data.name is string
+          && request.resource.data.phone is string
+          && request.resource.data.city is string
+          && request.resource.data.documentDigits == motoboyId
+          && request.resource.data.pendingPassword is string
+          && request.resource.data.acceptedTerms == true
+        );
+
+      allow update: if isAdmin()
+        || (
+          (isOwnMotoboyProfile(motoboyId) || loginOwnsMotoboy())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "isOnline",
+            "lastSeenAt",
+            "lastLocation",
+            "updatedAt"
+          ])
+          && (
+            !("technicalPauseUntilMs" in resource.data)
+            || resource.data.technicalPauseUntilMs <= request.time.toMillis()
+            || request.resource.data.isOnline == false
+          )
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
