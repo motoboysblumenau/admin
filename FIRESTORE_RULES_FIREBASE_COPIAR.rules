@@ -68,6 +68,14 @@ service cloud.firestore {
         );
     }
 
+    function isDeliveryStoreOwner() {
+      return request.auth != null
+        && (
+          ("createdByUid" in resource.data && resource.data.createdByUid == request.auth.uid)
+          || ("storeId" in resource.data && resource.data.storeId == request.auth.uid)
+        );
+    }
+
     match /commercialUsers/{uid} {
       allow get: if isAdmin() || (request.auth != null && request.auth.uid == uid);
       allow list: if isAdmin();
@@ -235,6 +243,29 @@ service cloud.firestore {
             "updatedAt"
           ])
           && request.resource.data.status in ["Motoboy solicitado", "Em andamento", "Finalizado", "Cancelado"]
+        )
+        || (
+          isDeliveryStoreOwner()
+          && resource.data.status in ["Novo", "Motoboy solicitado", "Em andamento"]
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "pickupCodeConfirmedAt",
+            "pickupCodeConfirmedByStore",
+            "pickupCodeConfirmedStoreUid",
+            "pickupCodeConfirmedStoreName",
+            "customerName",
+            "deliveryAddress",
+            "deliveryNumber",
+            "deliveryComplement",
+            "notes",
+            "status",
+            "canceledAt",
+            "canceledByStore",
+            "updatedAt"
+          ])
+          && (
+            request.resource.data.status == resource.data.status
+            || request.resource.data.status == "Cancelado"
+          )
         );
 
       allow delete: if isAdmin();
