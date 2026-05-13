@@ -240,6 +240,9 @@ service cloud.firestore {
             "deliveredStops",
             "motoboyLocation",
             "motoboyLocationUpdatedAt",
+            "lastRouteMessage",
+            "lastRouteMessageAt",
+            "lastRouteMessageSender",
             "updatedAt"
           ])
           && request.resource.data.status in ["Motoboy solicitado", "Em andamento", "Finalizado", "Cancelado"]
@@ -260,6 +263,11 @@ service cloud.firestore {
             "status",
             "canceledAt",
             "canceledByStore",
+            "canceledByStoreName",
+            "cancelReason",
+            "lastRouteMessage",
+            "lastRouteMessageAt",
+            "lastRouteMessageSender",
             "updatedAt"
           ])
           && (
@@ -269,6 +277,47 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin();
+    }
+
+    match /deliveries/{deliveryId}/messages/{messageId} {
+      function parentDelivery() {
+        return get(/databases/$(database)/documents/deliveries/$(deliveryId)).data;
+      }
+
+      function isDeliveryStoreParticipant() {
+        return request.auth != null
+          && (
+            parentDelivery().createdByUid == request.auth.uid
+            || parentDelivery().storeId == request.auth.uid
+          );
+      }
+
+      function isDeliveryMotoboyParticipant() {
+        return request.auth != null
+          && parentDelivery().assignedMotoboyUid == request.auth.uid;
+      }
+
+      allow get, list: if isAdmin()
+        || isDeliveryStoreParticipant()
+        || isDeliveryMotoboyParticipant();
+
+      allow create: if isAdmin()
+        || (
+          isDeliveryStoreParticipant()
+          && parentDelivery().status in ["Novo", "Motoboy solicitado", "Em andamento"]
+          && request.resource.data.sender == "store"
+          && request.resource.data.text is string
+          && request.resource.data.createdAt is string
+        )
+        || (
+          isDeliveryMotoboyParticipant()
+          && parentDelivery().status in ["Motoboy solicitado", "Em andamento"]
+          && request.resource.data.sender == "motoboy"
+          && request.resource.data.text is string
+          && request.resource.data.createdAt is string
+        );
+
+      allow update, delete: if isAdmin();
     }
 
     match /motoboyLogins/{cpf} {
