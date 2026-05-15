@@ -236,6 +236,9 @@ service cloud.firestore {
             "finishedAt",
             "cancelNoticeSeenAt",
             "canceledAt",
+            "collectionConfirmedAt",
+            "returnStartedAt",
+            "returnArrivedAt",
             "currentStopIndex",
             "deliveredStops",
             "motoboyLocation",
@@ -268,6 +271,13 @@ service cloud.firestore {
             "lastRouteMessage",
             "lastRouteMessageAt",
             "lastRouteMessageSender",
+            "requiresReturnToStore",
+            "returnToStoreActive",
+            "returnReason",
+            "collectionAmount",
+            "collectionInstruction",
+            "returnIfCustomerAbsent",
+            "absentCustomerInstruction",
             "updatedAt"
           ])
           && (
