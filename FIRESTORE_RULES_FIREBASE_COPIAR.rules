@@ -346,6 +346,29 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /shopCategories/{categoryId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /shopProducts/{productId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /shopOrders/{orderId} {
+      allow get, list: if isAdmin();
+      allow create: if request.resource.data.id == orderId
+        && request.resource.data.status == "pendente"
+        && request.resource.data.customerName is string
+        && request.resource.data.phone is string
+        && request.resource.data.address is string
+        && request.resource.data.items is list
+        && request.resource.data.total is number
+        && request.resource.data.createdAt is string;
+      allow update, delete: if isAdmin();
+    }
+
     match /fixedMotoboyOffers/{offerId} {
       allow get, list: if isAdmin() || request.auth != null;
 
