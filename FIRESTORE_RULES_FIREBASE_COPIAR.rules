@@ -346,6 +346,12 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /systemSettings/{settingId} {
+      allow get: if settingId == "commercialPortal" || isAdmin();
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /shopCategories/{categoryId} {
       allow get, list: if true;
       allow create, update, delete: if isAdmin();
