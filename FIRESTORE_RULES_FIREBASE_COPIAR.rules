@@ -182,7 +182,7 @@ service cloud.firestore {
 
       allow create: if (
           request.resource.data.protocol == deliveryId
-          && request.resource.data.status == "Novo"
+          && request.resource.data.status in ["Novo", "Em análise"]
           && request.resource.data.customerName is string
           && request.resource.data.phone is string
           && request.resource.data.pickupAddress is string
